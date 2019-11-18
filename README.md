@@ -57,13 +57,15 @@ You specify it into service folders in the dir of the topology definition:
 ```
 |
  - topology.txt
+ - topology.config
  - services
  | - zookeeper
-   | - config
-   | - swarm-service-~.yml.tmpl
+   | - service.config
+   | - swarm-service~.yml.tmpl
  | - prometheus
+   | - swarm-service.yml.tmpl
    | - config
-   | - prometheus.yml.tmpl
+     | - prometheus.yml.tmpl
 ```
    
 ##### What else?
