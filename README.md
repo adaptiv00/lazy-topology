@@ -21,7 +21,9 @@ That's pretty much enough for it to make that happen for you, actually (never mi
 Schema registry for it to work). Here's the topology.txt for that, however:
 
 node_count        = 5
+
 kafka_cfg         = 1,2,3:9092
+
 kafka_connect_cfg = 4,5:8083
 
 ##### What's with that format
@@ -52,7 +54,7 @@ it'll actually work.
 ##### Other configuration?
 
 You specify it into service folders in the dir of the topology definition:
-
+```
 |
  - topology.txt
  - services
@@ -62,6 +64,7 @@ You specify it into service folders in the dir of the topology definition:
  | - prometheus
    | - config
    | - prometheus.yml.tmpl
+```
    
 ##### What else?
 
