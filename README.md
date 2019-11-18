@@ -20,11 +20,11 @@ Node - A node in the cluster. Yes, it somewhat forces you to think like that.
 That's pretty much enough for it to make that happen for you, actually (never mind you also need Zookeeper and possibly
 Schema registry for it to work). Here's the topology.txt for that, however:
 
+```
 node_count        = 5
-
 kafka_cfg         = 1,2,3:9092
-
 kafka_connect_cfg = 4,5:8083
+```
 
 ##### What's with that format
 It's more or less old property files flavor. Key = value. Really not hip.
