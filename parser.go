@@ -189,13 +189,18 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) 
 	} else {
 		log.Println(fmt.Sprintf("inheriting '%s' from config: '%s'", name, inheritConfigFilePath))
 	}
+
 	configFilePath := serviceConfigFilePath(name)
 	serviceConfig, err := ReadConfigFile(configFilePath, topologyConfigData, &inheritServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 	// service config w/o topology data, strictly for JSON rendering. DO NOT USE for rendering
-	rawConfig, err := ReadConfigFile(configFilePath, topologyConfigData, &serviceConfig)
+	inheritRawConfig, err := ReadConfigFile(inheritConfigFilePath, topologyConfigData, nil)
+	if err != nil {
+		return nil, err
+	}
+	rawConfig, err := ReadConfigFile(configFilePath, topologyConfigData, &inheritRawConfig)
 	if err != nil {
 		return nil, err
 	}
