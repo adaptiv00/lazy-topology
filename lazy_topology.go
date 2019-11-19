@@ -2,24 +2,15 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 )
 
-const TopologyRootFolder = "."
-const TopologyDefFile = "topology.txt"
-const DefaultServicesFolder = "services"
-const DefaultDeployFolder = "deploy"
-const DefaultBinFolder = "bin"
 const DefaultSwarmStackName = "app"
 const SwarmServiceFragment = "swarm-service"
 const DefaultSwarmDeployFolder = "swarm"
-const TemplateExt = ".tmpl"
-const DefaultFileMode = os.FileMode(0644)
 
 func main() {
 	var topology, err = BuildTopologyFromFile(topologyFile())
@@ -28,15 +19,6 @@ func main() {
 	handleError(err)
 }
 
-type FileScanningContext struct {
-	rootPath              string
-	pathFragment          string
-	includingPathFragment bool
-	extension             string
-}
-
-type RenderTemplate func(templateFilePath string) (string, error)
-
 func renderAllFor(topology Topology) error {
 
 	var err = os.RemoveAll(deployDir())
@@ -44,7 +26,7 @@ func renderAllFor(topology Topology) error {
 		return err
 	}
 
-	err = appendToFile(path.Join(deployDir(), "topology.json"), topology.jsonString)
+	err = appendToFile(topologyJsonFile(), topology.jsonString)
 	if err != nil {
 		return err
 	}
@@ -80,6 +62,13 @@ func renderSwarmServiceTemplates(topology Topology) error {
 
 	for _, serviceDef := range topology.serviceMetadata {
 
+		inheritFileScanningContext := FileScanningContext{
+			rootPath:              inheritServiceDir(serviceDef.Name),
+			pathFragment:          SwarmServiceFragment,
+			includingPathFragment: true,
+			extension:             TemplateExt,
+		}
+
 		fileScanningContext := FileScanningContext{
 			rootPath:              serviceDir(serviceDef.Name),
 			pathFragment:          SwarmServiceFragment,
@@ -92,12 +81,19 @@ func renderSwarmServiceTemplates(topology Topology) error {
 			return strings.Join(results, "\n"), err
 		}
 
+		inheritServices, err := withScanningContext(inheritFileScanningContext, renderSwarmServiceTemplate)
+		if err != nil {
+			return err
+		}
+
+		// TODO REALLY ADD EXCLUDES HERE AS IT'S NOT OVERWRITING, IT'S ADDING
 		services, err := withScanningContext(fileScanningContext, renderSwarmServiceTemplate)
 		if err != nil {
 			return err
 		}
 
-		stackMap[serviceDef.Config.getString("stack", DefaultSwarmStackName)] += strings.Join(services, "")
+		servicesString := strings.Join(append(inheritServices, services...), "")
+		stackMap[serviceDef.Config.getString("stack", DefaultSwarmStackName)] += servicesString
 
 	}
 
@@ -112,8 +108,7 @@ func renderSwarmServiceTemplates(topology Topology) error {
 		if err != nil {
 			return err
 		}
-		stackFilePath := path.Join(deployDir(), DefaultSwarmDeployFolder, fmt.Sprintf("%s.yml", stackName))
-		err = appendToFile(stackFilePath, swarmStackString)
+		err = appendToFile(stackFilePath(stackName), swarmStackString)
 		if err != nil {
 			return err
 		}
@@ -123,6 +118,13 @@ func renderSwarmServiceTemplates(topology Topology) error {
 
 func renderAllButSwarmServiceTemplates(topology Topology) error {
 	for _, serviceDef := range topology.serviceMetadata {
+
+		inheritFileScanningContext := FileScanningContext{
+			rootPath:              inheritServiceDir(serviceDef.Name),
+			pathFragment:          SwarmServiceFragment,
+			includingPathFragment: false,
+			extension:             TemplateExt,
+		}
 
 		fileScanningContext2 := FileScanningContext{
 			rootPath:              serviceDir(serviceDef.Name),
@@ -135,9 +137,13 @@ func renderAllButSwarmServiceTemplates(topology Topology) error {
 			return "", renderGenericTemplate(templateFilePath, serviceDef, topology)
 		}
 
-		_, err2 := withScanningContext(fileScanningContext2, _renderGenericTemplate)
-		if err2 != nil {
-			return err2
+		_, err := withScanningContext(inheritFileScanningContext, _renderGenericTemplate)
+		if err != nil {
+			return err
+		}
+		_, err = withScanningContext(fileScanningContext2, _renderGenericTemplate)
+		if err != nil {
+			return err
 		}
 
 	}
@@ -148,20 +154,28 @@ func renderAllButSwarmServiceTemplates(topology Topology) error {
 // aka ./bin/__utils.sh.tmpl ends up in deploy/bin/__utils.sh
 func renderGlobalTemplates(topology Topology) error {
 
+	inheritRootFolder := fmt.Sprintf("%s/", inheritRootDir())
 	var renderGlobalTemplate = func(filePath string) (string, error) {
-		outFilePath := strings.ReplaceAll(path.Join(DefaultDeployFolder, filePath), TemplateExt, "")
+		// remove .tmpl and inherit root folder path in vendors, remains only what's in it
+		outFilePath := strings.ReplaceAll(deployFilePath(filePath), TemplateExt, "")
+		outFilePath = strings.ReplaceAll(outFilePath, inheritRootFolder, "")
 		var res, err = RenderGlobalTemplate(filePath, topology)
 		if err != nil {
 			return "", err
 		}
 		return "", appendToFile(outFilePath, res)
 	}
-
-	_, err := withDirectory(DefaultBinFolder, renderGlobalTemplate)
+	// Non existing paths will be ignored
+	_, err := withDirectory(rootInheritBinFolder(), renderGlobalTemplate)
+	if err != nil {
+		return err
+	}
+	_, err = withDirectory(BinFolder, renderGlobalTemplate)
 	return err
 }
 
 func appendServicePrePostDeploysToGlobal(topology Topology) error {
+	// TODO Should this actually be prepend? Aka service post deploy THEN global post deploy
 	err := appendDeployToGlobal("post-deploy.sh", topology)
 	if err != nil {
 		return err
@@ -170,16 +184,16 @@ func appendServicePrePostDeploysToGlobal(topology Topology) error {
 }
 
 func appendDeployToGlobal(fileName string, topology Topology) error {
-	deployFile := path.Join(DefaultDeployFolder, DefaultBinFolder, fileName)
-	if _, err := os.Stat(deployFile); err == nil  {
+	deployFile := path.Join(DeployFolder, BinFolder, fileName)
+	if _, err := os.Stat(deployFile); err == nil {
 		for _, serviceDef := range topology.serviceMetadata {
-			servicePostDeployFile := path.Join(DefaultDeployFolder, serviceDef.Name, DefaultBinFolder, fileName)
+			servicePostDeployFile := path.Join(DeployFolder, serviceDef.Name, BinFolder, fileName)
 			if _, err := os.Stat(servicePostDeployFile); err == nil {
 				content, err := readTextFile(servicePostDeployFile)
 				if err != nil {
 					return err
 				}
-				content = strings.ReplaceAll(content,"#!/usr/bin/env bash\n", "")
+				content = strings.ReplaceAll(content, "#!/usr/bin/env bash\n", "")
 				err = appendToFile(deployFile, content)
 				if err != nil {
 					return err
@@ -196,7 +210,7 @@ func renderGenericTemplate(templateFilePath string, serviceDef ServiceMetadata, 
 		return err
 	}
 	for idx, res := range results {
-		tmp := strings.ReplaceAll(templateFilePath, ServicesFolder, DefaultDeployFolder)
+		tmp := strings.ReplaceAll(templateFilePath, ServicesFolder, DeployFolder)
 		tmp1 := strings.ReplaceAll(tmp, TemplateExt, "")
 		resultFilePath := strings.ReplaceAll(tmp1, "~", fmt.Sprintf("-%s", nodeId(idx)))
 		err = appendToFile(resultFilePath, res)
@@ -207,62 +221,21 @@ func renderGenericTemplate(templateFilePath string, serviceDef ServiceMetadata, 
 	return nil
 }
 
-func readTextFile(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	b, err := ioutil.ReadAll(file)
-	return string(b), err
+type FileScanningContext struct {
+	rootPath              string
+	pathFragment          string
+	includingPathFragment bool
+	extension             string
 }
 
-func appendToFile(filePath string, content string) error {
-	// Make the dirs up to the file
-	err := MkDirs(path.Dir(filePath))
-	if err != nil {
-		return err
-	}
-	// If the file doesn't exist, create it, or append to the file
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, DefaultFileMode)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write([]byte(content)); err != nil {
-		err1 := f.Close() // ignore error; Write error takes precedence
-		if err1 != nil {
-			return err1
-		}
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func topologyFile() string {
-	return path.Join(TopologyRootFolder, TopologyDefFile)
-}
-
-func serviceDir(serviceName string) string {
-	return path.Join(servicesDir(), serviceName)
-}
-
-func servicesDir() string {
-	return path.Join(TopologyRootFolder, DefaultServicesFolder)
-}
-
-func deployDir() string {
-	return path.Join(TopologyRootFolder, DefaultDeployFolder)
-}
+type RenderTemplate func(templateFilePath string) (string, error)
 
 func withScanningContext(ctx FileScanningContext, render RenderTemplate) ([]string, error) {
 	var res []string
 	err := filepath.Walk(ctx.rootPath, func(templateFilePath string, handle os.FileInfo, err error) error {
 		nameMatches := ctx.includingPathFragment && strings.Contains(templateFilePath, ctx.pathFragment) ||
 			!ctx.includingPathFragment && !strings.Contains(templateFilePath, ctx.pathFragment)
-		if !handle.IsDir() && nameMatches && path.Ext(handle.Name()) == ctx.extension {
+		if handle != nil && !handle.IsDir() && nameMatches && path.Ext(handle.Name()) == ctx.extension {
 			tmp, err := render(templateFilePath)
 			if err != nil {
 				return err
@@ -277,7 +250,7 @@ func withScanningContext(ctx FileScanningContext, render RenderTemplate) ([]stri
 func withDirectory(rootPath string, render RenderTemplate) ([]string, error) {
 	var res []string
 	err := filepath.Walk(rootPath, func(templateFilePath string, handle os.FileInfo, err error) error {
-		if !handle.IsDir() && path.Ext(handle.Name()) == TemplateExt {
+		if handle != nil && !handle.IsDir() && path.Ext(handle.Name()) == TemplateExt {
 			tmp, err := render(templateFilePath)
 			if err != nil {
 				return err
@@ -287,12 +260,6 @@ func withDirectory(rootPath string, render RenderTemplate) ([]string, error) {
 		return nil
 	})
 	return res, err
-}
-
-func MkDirs(path string) error {
-	cmd := exec.Command("mkdir", "-p", path)
-	err := cmd.Run()
-	return err
 }
 
 func handleError(err error) {

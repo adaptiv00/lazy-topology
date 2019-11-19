@@ -4,31 +4,22 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 )
 
-const TopologyConfigFile = "topology.config"
-const ServiceConfigFileName = "service.config"
-const ServicesFolder = "services"
-
 type Config struct {
 	data map[string]string
-	parent *Config
 }
 
-func (config Config) getString(name string, def string) string {
+func (config Config) getString(name string, dfolt string) string {
 	var tmp, exists = config.data[name]
 	if exists {
 		return tmp
-	} else {
-		if config.parent != nil {
-			return config.parent.getString(name, def)
-		}
 	}
-	return def
+	return dfolt
 }
 
 func (config Config) dataForRender() map[string]interface{} {
@@ -50,10 +41,11 @@ type TopologyMetadata struct {
 }
 
 type ServiceMetadata struct {
-	Name    string // zookeeper
-	NodeIDs []int  // 1,2,3 -> [1, 2, 3]
-	Ports   []int  // 2181,2888,3888 -> [2181, 2888, 3888]
-	Config  Config
+	Name      string // zookeeper
+	NodeIDs   []int  // 1,2,3 -> [1, 2, 3]
+	Ports     []int  // 2181,2888,3888 -> [2181, 2888, 3888]
+	Config    Config
+	RawConfig Config
 }
 
 func ReadKeyValuePair(line string) (string, string, error) {
@@ -90,7 +82,14 @@ func TopologyMetadataFromLines(lines []string) (*TopologyMetadata, error) {
 		return nil, err
 	}
 
-	topologyConfig, err := ReadConfigFile(path.Join(TopologyRootFolder, TopologyConfigFile), nil, nil)
+	inheritConfigFile := inheritTopologyConfigFile()
+	inheritConfig, err := ReadConfigFile(inheritConfigFile, nil, nil)
+	if err != nil {
+		log.Println(fmt.Sprintf("ingnoring missing inherit topology config: '%s'", inheritConfigFile))
+	} else {
+		log.Println(fmt.Sprintf("inheriting topology config: '%s'", inheritConfigFile))
+	}
+	topologyConfig, err := ReadConfigFile(topologyConfigFile(), nil, &inheritConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +102,19 @@ func TopologyMetadataFromLines(lines []string) (*TopologyMetadata, error) {
 }
 
 func NewConfig(data map[string]string, parent *Config) Config {
+	res := map[string]string{}
+	// initialize with parent if there
+	if parent != nil {
+		for k, v := range parent.data {
+			res[k] = v
+		}
+	}
+	// override parent
+	for k, v := range data {
+		res[k] = v
+	}
 	return Config{
-		data:   data,
-		parent: parent,
+		data: res,
 	}
 }
 
@@ -173,17 +182,30 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) 
 		ports = append(ports, port)
 	}
 	topologyConfigData := topologyMetadata.Config.dataForRender()
-	serviceConfigFile := fmt.Sprintf("%s/%s/%s", ServicesFolder, name, ServiceConfigFileName)
-	serviceConfig, err := ReadConfigFile(serviceConfigFile, topologyConfigData, &topologyMetadata.Config)
+	inheritConfigFilePath := inheritServiceConfigFile(name)
+	inheritServiceConfig, err := ReadConfigFile(inheritConfigFilePath, topologyConfigData, &topologyMetadata.Config)
+	if _, err1 := os.Stat(inheritConfigFilePath); err != nil || os.IsNotExist(err1) {
+		//log.Println(fmt.Sprintf("ignoring missing inherit service config: '%s'", inheritConfigFilePath))
+	} else {
+		log.Println(fmt.Sprintf("inheriting '%s' from config: '%s'", name, inheritConfigFilePath))
+	}
+	configFilePath := serviceConfigFilePath(name)
+	serviceConfig, err := ReadConfigFile(configFilePath, topologyConfigData, &inheritServiceConfig)
+	if err != nil {
+		return nil, err
+	}
+	// service config w/o topology data, strictly for JSON rendering. DO NOT USE for rendering
+	rawConfig, err := ReadConfigFile(configFilePath, topologyConfigData, &serviceConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ServiceMetadata{
-		Name:    name,
-		NodeIDs: nodeIDs,
-		Ports:   ports,
-		Config:  serviceConfig,
+		Name:      name,
+		NodeIDs:   nodeIDs,
+		Ports:     ports,
+		Config:    serviceConfig,
+		RawConfig: rawConfig,
 	}, nil
 }
 

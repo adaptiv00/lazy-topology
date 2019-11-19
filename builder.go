@@ -12,6 +12,15 @@ const ServiceConfigSuffix = "_cfg"
 const InstancePortSeparator = ":"
 const ValueSeparator = ","
 const NodeNamePrefix = "dev-"
+const RootConfigName = "from"
+const SubFolderSeparator = "#"
+const BranchSeparator = "?"
+
+type SourceDef struct {
+	gitUrl string
+	branch string
+	subFolder string
+}
 
 type InstanceDef struct {
 	ID    string
@@ -28,10 +37,10 @@ type ServiceDef struct {
 }
 
 type Topology struct {
-	topologyMetadata *TopologyMetadata
-	serviceMetadata  []ServiceMetadata
-	dataMap          map[string]interface{}
-	jsonString       string
+	metadata        *TopologyMetadata
+	serviceMetadata []ServiceMetadata
+	dataMap         map[string]interface{}
+	jsonString      string
 }
 
 func BuildTopologyFromFile(fileName string) (*Topology, error) {
@@ -52,6 +61,16 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	gitCache := NewGitCache()
+	defer gitCache.cleanup()
+	inheritTopologySpec := topologyMetadata.Config.getString(RootConfigName, "")
+	if inheritTopologySpec != "" {
+		err := gitCache.fetch(inheritTopologySpec, inheritRootDir())
+		if err != nil {
+			return nil, err
+		}
+	}
 	serviceMetadataList, err := ServiceMetadataFromLines(lines, *topologyMetadata)
 	if err != nil {
 		return nil, err
@@ -65,6 +84,13 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 		}
 		res[serviceDef.Name] = *serviceDef
 		serviceDefs[idx] = *serviceDef
+		inheritServiceSpec := serviceMetadata.Config.getString(RootConfigName, "")
+		if inheritServiceSpec != "" {
+			err := gitCache.fetch(inheritServiceSpec, inheritServiceDir(serviceMetadata.Name))
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	res["node_count"] = topologyMetadata.NodeCount
@@ -80,10 +106,10 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 	err1 := json.Unmarshal([]byte(jsonString), &dataMap)
 
 	return &Topology{
-		topologyMetadata: topologyMetadata,
-		serviceMetadata:  serviceMetadataList,
-		dataMap:          dataMap,
-		jsonString:       jsonString,
+		metadata:        topologyMetadata,
+		serviceMetadata: serviceMetadataList,
+		dataMap:         dataMap,
+		jsonString:      jsonString,
 	}, err1
 }
 
@@ -111,7 +137,7 @@ func serviceDefFromMetadata(service ServiceMetadata, topology TopologyMetadata, 
 	return &ServiceDef{
 		Name:      service.Name,
 		Instances: instanceDefs,
-		Config:    service.Config.data,
+		Config:    service.RawConfig.data,
 	}, nil
 }
 
@@ -159,4 +185,24 @@ func getStackNames(defaultStack string, serviceDefs []ServiceMetadata) []string 
 		}
 	}
 	return names
+}
+
+func parseSourceDef(urlSpec string) *SourceDef {
+	var subFolder = ""
+	tmp := strings.Split(urlSpec, SubFolderSeparator)
+	if len(tmp) > 1 {
+		subFolder = tmp[1]
+		urlSpec = tmp[0]
+	}
+	var branch = "master"
+	tmp1 := strings.Split(urlSpec, BranchSeparator)
+	if len(tmp1) > 1 {
+		branch = tmp1[1]
+		urlSpec = tmp1[0]
+	}
+	return &SourceDef{
+		gitUrl:    urlSpec,
+		branch:    branch,
+		subFolder: subFolder,
+	}
 }
