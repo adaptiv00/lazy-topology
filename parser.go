@@ -96,7 +96,7 @@ func TopologyMetadataFromLines(lines []string) (*TopologyMetadata, error) {
 
 	return &TopologyMetadata{
 		NodeCount: nodeCount,
-		NodeNames: getNodeNames(nodeCount),
+		NodeNames: getNodeNames(topologyConfig.getString(NodeNamePrefixPropertyName, DefaultNodeNamePrefix), nodeCount),
 		Config:    topologyConfig,
 	}, nil
 }

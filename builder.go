@@ -11,7 +11,8 @@ const KeyValueSeparator = "="
 const ServiceConfigSuffix = "_cfg"
 const InstancePortSeparator = ":"
 const ValueSeparator = ","
-const NodeNamePrefix = "dev-"
+const DefaultNodeNamePrefix = "dev"
+const NodeNamePrefixPropertyName = "hostname_prefix"
 const RootConfigName = "from"
 const SubFolderSeparator = "#"
 const BranchSeparator = "?"
@@ -95,7 +96,7 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 
 	res["node_count"] = topologyMetadata.NodeCount
 	res["config"] = topologyMetadata.Config.data
-	res["node_names"] = getNodeNames(topologyMetadata.NodeCount)
+	res["node_names"] = getNodeNames(topologyMetadata.Config.getString(NodeNamePrefixPropertyName, DefaultNodeNamePrefix), topologyMetadata.NodeCount)
 	res["stack_names"] = getStackNames(topologyMetadata.Config.getString("stack", DefaultSwarmStackName), serviceMetadataList)
 
 	jsonString, err := TopologyToJSonString(res)
@@ -123,7 +124,7 @@ func TopologyToJSonString(topology map[string]interface{}) (string, error) {
 
 func serviceDefFromMetadata(service ServiceMetadata, topology TopologyMetadata, portsCache map[string]string) (*ServiceDef, error) {
 	instanceDefs := make([]InstanceDef, len(service.NodeIDs))
-	nodeNames := getNodeNames(topology.NodeCount)
+	nodeNames := getNodeNames(topology.Config.getString(NodeNamePrefixPropertyName, DefaultNodeNamePrefix), topology.NodeCount)
 	for idx, nodeID := range service.NodeIDs {
 		id := nodeId(idx)
 		instanceDefs[idx] = InstanceDef{
@@ -158,18 +159,18 @@ func findAndRegisterPort(basePort int, node string, portsCache map[string]string
 	return port
 }
 
-func nodeName(idx int) string {
-	return fmt.Sprintf("%snode%02d", NodeNamePrefix, idx+1)
+func nodeName(nodenamePrefix string, idx int) string {
+	return fmt.Sprintf("%s-node%02d", nodenamePrefix, idx+1)
 }
 
 func nodeId(idx int) string {
 	return fmt.Sprintf("%02d", idx+1)
 }
 
-func getNodeNames(nodeCount int) []string {
+func getNodeNames(nodeNamePrefix string, nodeCount int) []string {
 	nodes := make([]string, nodeCount)
 	for idx := 0; idx < nodeCount; idx++ {
-		nodes[idx] = nodeName(idx)
+		nodes[idx] = nodeName(nodeNamePrefix, idx)
 	}
 	return nodes
 }
