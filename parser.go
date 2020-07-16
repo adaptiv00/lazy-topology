@@ -49,11 +49,14 @@ type ServiceMetadata struct {
 }
 
 func ReadKeyValuePair(line string) (string, string, error) {
-	if ! strings.Contains(line, "=") {
+	if ! strings.Contains(line, KeyValueSeparator) {
 		return "", "", errors.New("incorrect line format. Use: key=value")
 	}
 	keyAndValue := strings.Split(strings.TrimSpace(line), KeyValueSeparator)
-	return strings.TrimSpace(keyAndValue[0]), strings.TrimSpace(strings.Join(keyAndValue[1:], "")), nil
+	key := strings.TrimSpace(keyAndValue[0])
+	// if it split in more than 2, it means value contains at least one KeyValueSeparator and we need to join by it
+	value := strings.TrimSpace(strings.Join(keyAndValue[1:], KeyValueSeparator))
+	return key, value, nil
 }
 
 func TopologyMetadataFromLines(lines []string) (*TopologyMetadata, error) {
