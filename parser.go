@@ -188,7 +188,7 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) 
 	inheritConfigFilePath := inheritServiceConfigFile(name)
 	inheritServiceConfig, err := ReadConfigFile(inheritConfigFilePath, topologyConfigData, &topologyMetadata.Config)
 	if _, err1 := os.Stat(inheritConfigFilePath); err != nil || os.IsNotExist(err1) {
-		//log.Println(fmt.Sprintf("ignoring missing inherit service config: '%s'", inheritConfigFilePath))
+		log.Println(fmt.Sprintf("ignoring missing inherit service config: '%s'", inheritConfigFilePath))
 	} else {
 		log.Println(fmt.Sprintf("inheriting '%s' from config: '%s'", name, inheritConfigFilePath))
 	}
@@ -217,7 +217,7 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) 
 	}, nil
 }
 
-func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata) ([]ServiceMetadata, error) {
+func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata, parse bool) ([]ServiceMetadata, error) {
 	var metas []ServiceMetadata
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
@@ -235,11 +235,22 @@ func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata)
 			return nil, errors.New(fmt.Sprintf("'%s' must have '%s'", key, InstancePortSeparator))
 		}
 		serviceName := strings.ReplaceAll(key, ServiceConfigSuffix, "")
-		meta, err := parseServiceMetadata(serviceName, serviceSpec, topologyMetadata)
-		if err != nil {
-			return nil, err
+		if parse {
+			meta, err := parseServiceMetadata(serviceName, serviceSpec, topologyMetadata)
+			if err != nil {
+				return nil, err
+			}
+			metas = append(metas, *meta)
+		}  else {
+			meta := &ServiceMetadata{
+				Name:      serviceName,
+				NodeIDs:   nil,
+				Ports:     nil,
+				Config:    NewConfig(map[string]string{}, nil),
+				RawConfig: NewConfig(map[string]string{}, nil),
+			}
+			metas = append(metas, *meta)
 		}
-		metas = append(metas, *meta)
 	}
 	return metas, nil
 }

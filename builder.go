@@ -72,7 +72,27 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 			return nil, err
 		}
 	}
-	serviceMetadataList, err := ServiceMetadataFromLines(lines, *topologyMetadata)
+
+	// Quick look ahead round just to GIT fetch inheritance / 'from = ' service configs
+	serviceMetadataListForInheritGitFetch, err := ServiceMetadataFromLines(lines, *topologyMetadata, false)
+	for _, serviceMetadata :=  range serviceMetadataListForInheritGitFetch {
+		// !!!  WARNING  !!! with parse == false the only valid field in service metadata is Name
+		configFilePath := serviceConfigFilePath(serviceMetadata.Name)
+		serviceConfig, err := ReadConfigFile(configFilePath, map[string]interface{}{}, nil)
+		if err != nil {
+			return nil, err
+		}
+		inheritServiceSpec := serviceConfig.getString(RootConfigName, "")
+		if inheritServiceSpec != "" {
+			//log.Println(fmt.Sprintf("Should git fetch for: '%s'", inheritServiceSpec))
+			err := gitCache.fetch(inheritServiceSpec, inheritServiceDir(serviceMetadata.Name))
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	serviceMetadataList, err := ServiceMetadataFromLines(lines, *topologyMetadata, true)
 	if err != nil {
 		return nil, err
 	}
@@ -85,13 +105,6 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 		}
 		res[serviceDef.Name] = *serviceDef
 		serviceDefs[idx] = *serviceDef
-		inheritServiceSpec := serviceMetadata.Config.getString(RootConfigName, "")
-		if inheritServiceSpec != "" {
-			err := gitCache.fetch(inheritServiceSpec, inheritServiceDir(serviceMetadata.Name))
-			if err != nil {
-				return nil, err
-			}
-		}
 	}
 
 	res["node_count"] = topologyMetadata.NodeCount
