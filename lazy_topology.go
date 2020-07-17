@@ -210,9 +210,10 @@ func renderGenericTemplate(templateFilePath string, serviceDef ServiceMetadata, 
 		return err
 	}
 	for idx, res := range results {
-		tmp := strings.ReplaceAll(templateFilePath, ServicesFolder, DeployFolder)
-		tmp1 := strings.ReplaceAll(tmp, TemplateExt, "")
-		resultFilePath := strings.ReplaceAll(tmp1, "~", fmt.Sprintf("-%s", nodeId(idx)))
+		tmp := strings.ReplaceAll(templateFilePath, inheritServiceDir(serviceDef.Name), serviceDir(serviceDef.Name))
+		tmp = strings.ReplaceAll(tmp, ServicesFolder, DeployFolder)
+		tmp = strings.ReplaceAll(tmp, TemplateExt, "")
+		resultFilePath := strings.ReplaceAll(tmp, "~", fmt.Sprintf("-%s", nodeId(idx)))
 		err = appendToFile(resultFilePath, res)
 		if err != nil {
 			return err
