@@ -14,7 +14,7 @@ func TestTopologyMetadataFromLines(t *testing.T) {
 func TestServiceMetadataFromLines(t *testing.T) {
 	topologyMetadata, err := TopologyMetadataFromLines(strings.Split(TopologyString, "\n"))
 	handleTestingError(err, t)
-	serviceMetadataList, err := ServiceMetadataFromLines(strings.Split(TopologyString, "\n"), *topologyMetadata)
+	serviceMetadataList, err := ServiceMetadataFromLines(strings.Split(TopologyString, "\n"), *topologyMetadata, true)
 	MustBeInt(1, len(serviceMetadataList), "service def count", t)
 	serviceMetadata := serviceMetadataList[0]
 	MustBeInt(3, len(serviceMetadata.NodeIDs), "node id count", t)
