@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 )
@@ -80,6 +81,7 @@ func replacePlaceholders(content string, config map[string]interface{}) string {
 			}
 		}
 		if len(varMatches) > 0 {
+			sort.Strings(varMatches)
 			content = lineMatcher.ReplaceAllString(content, strings.Join(varMatches, "\n"))
 		}
 	}

@@ -9,6 +9,7 @@ import (
 
 func funcMap() template.FuncMap {
 	return template.FuncMap{
+		"nodes":                    nodes,
 		"hosts_with_ports":         hostsWithPorts,
 		"join":                     join,
 		"with_port":                withPort,
@@ -65,6 +66,14 @@ func urlWithPort(httpPrefix string, querySuffix string, portIndex int, instances
 		node := instance.(map[string]interface{})["node"]
 		intPort := int(instance.(map[string]interface{})["ports"].([]interface{})[portIndex].(float64))
 		res[idx] = fmt.Sprintf("%s%s:%d%s", httpPrefix, node, intPort, querySuffix)
+	}
+	return res
+}
+
+func nodes(instances []interface{}) []interface{} {
+	res := make([]interface{}, len(instances))
+	for idx, instance := range instances {
+		res[idx] = instance.(map[string]interface{})["node"]
 	}
 	return res
 }
