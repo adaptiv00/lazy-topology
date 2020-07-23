@@ -22,7 +22,17 @@ func funcMap() template.FuncMap {
 		"get":                      get,
 		"grep_key":                 grepKey,
 		"grep_1st_value":           grep1stValue,
+		"mul":                      mul,
 	}
+}
+
+
+func mul(values ...interface{}) int {
+	res := 1
+	for _, tmp := range values {
+		res *= int(tmp.(float64))
+	}
+	return res
 }
 
 func hostsWithPorts(instances []interface{}, portIndexes ...int) []interface{} {
