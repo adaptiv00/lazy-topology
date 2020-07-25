@@ -184,9 +184,10 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata, 
 		}
 		ports = append(ports, port)
 	}
-	topologyConfigData := topologyMetadata.Config.dataForRender()
+	//topologyConfigData := topologyMetadata.Config.dataForRender()
+	topologyConfigData := asDataMap(topology)
 	inheritConfigFilePath := inheritServiceConfigFile(name)
-	inheritServiceConfig, err := ReadConfigFile(inheritConfigFilePath, topology.dataMap, &topologyMetadata.Config)
+	inheritServiceConfig, err := ReadConfigFile(inheritConfigFilePath, topologyConfigData, &topologyMetadata.Config)
 	if _, err1 := os.Stat(inheritConfigFilePath); err != nil || os.IsNotExist(err1) {
 		log.Println(fmt.Sprintf("ignoring missing inherit service config: '%s'", inheritConfigFilePath))
 	} else {
@@ -217,6 +218,12 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata, 
 	}, nil
 }
 
+func asDataMap(topology *Topology) map[string]interface{} {
+	topologyData := map[string]interface{}{}
+	topologyData["topology"] = topology.dataMap
+	return topologyData
+}
+
 func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata, builder PartialTopologyBuilder, parse bool) ([]ServiceMetadata, error) {
 	metas := make([]ServiceMetadata, 0)
 	for i := 0; i < len(lines); i++ {
@@ -237,7 +244,6 @@ func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata,
 		serviceName := strings.ReplaceAll(key, ServiceConfigSuffix, "")
 		if parse {
 			partialTopology, err := builder(metas)
-			print(fmt.Sprintf("%v", partialTopology))
 			if err != nil {
 				return nil, err
 			}
