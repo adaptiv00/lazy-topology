@@ -73,8 +73,14 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 		}
 	}
 
+	serviceMetadataList := make([]ServiceMetadata, 0)
+	portsCache := make(map[string]string)
+	var partialTopologyBuilder = func (serviceMetadataList []ServiceMetadata) (*Topology, error) {
+		return topologyBuilder(serviceMetadataList, topologyMetadata, portsCache, res)
+	}
+
 	// Quick look ahead round just to GIT fetch inheritance / 'from = ' service configs
-	serviceMetadataListForInheritGitFetch, err := ServiceMetadataFromLines(lines, *topologyMetadata, false)
+	serviceMetadataListForInheritGitFetch, err := ServiceMetadataFromLines(lines, *topologyMetadata,partialTopologyBuilder, false)
 	for _, serviceMetadata :=  range serviceMetadataListForInheritGitFetch {
 		// !!!  WARNING  !!! with parse == false the only valid field in service metadata is Name
 		configFilePath := serviceConfigFilePath(serviceMetadata.Name)
@@ -92,19 +98,27 @@ func BuildTopologyFromLines(lines []string) (*Topology, error) {
 		}
 	}
 
-	serviceMetadataList, err := ServiceMetadataFromLines(lines, *topologyMetadata, true)
+	// Parse topology configs progressively making a temporary topology state available to current service
+	serviceMetadataList, err = ServiceMetadataFromLines(lines, *topologyMetadata, partialTopologyBuilder, true)
 	if err != nil {
 		return nil, err
 	}
-	serviceDefs := make([]ServiceDef, len(serviceMetadataList))
-	portsCache := make(map[string]string)
-	for idx, serviceMetadata := range serviceMetadataList {
+
+	return topologyBuilder(serviceMetadataList, topologyMetadata, portsCache, res)
+}
+
+type PartialTopologyBuilder func (serviceMetadataList []ServiceMetadata) (*Topology, error)
+
+func topologyBuilder(serviceMetadataList []ServiceMetadata, topologyMetadata *TopologyMetadata, portsCache map[string]string, res map[string]interface{}) (*Topology, error) {
+	serviceDefs := make([]ServiceDef, 0)
+	for _, serviceMetadata := range serviceMetadataList {
 		serviceDef, err := serviceDefFromMetadata(serviceMetadata, *topologyMetadata, portsCache)
 		if err != nil {
 			return nil, err
 		}
 		res[serviceDef.Name] = *serviceDef
-		serviceDefs[idx] = *serviceDef
+		//serviceDefs[idx] = *serviceDef
+		serviceDefs = append(serviceDefs, *serviceDef)
 	}
 
 	res["node_count"] = topologyMetadata.NodeCount

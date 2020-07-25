@@ -160,7 +160,7 @@ func ReadConfigString(configFileContents string, templateData map[string]interfa
 	return NewConfig(res, parent), nil
 }
 
-func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) (*ServiceMetadata, error) {
+func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata, topology *Topology) (*ServiceMetadata, error) {
 	nodeIDsAndPorts := strings.Split(strings.TrimSpace(spec), InstancePortSeparator)
 	nodeIDsAsStrings := strings.Split(strings.TrimSpace(nodeIDsAndPorts[0]), ValueSeparator)
 	var nodeIDs []int
@@ -186,7 +186,7 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) 
 	}
 	topologyConfigData := topologyMetadata.Config.dataForRender()
 	inheritConfigFilePath := inheritServiceConfigFile(name)
-	inheritServiceConfig, err := ReadConfigFile(inheritConfigFilePath, topologyConfigData, &topologyMetadata.Config)
+	inheritServiceConfig, err := ReadConfigFile(inheritConfigFilePath, topology.dataMap, &topologyMetadata.Config)
 	if _, err1 := os.Stat(inheritConfigFilePath); err != nil || os.IsNotExist(err1) {
 		log.Println(fmt.Sprintf("ignoring missing inherit service config: '%s'", inheritConfigFilePath))
 	} else {
@@ -217,8 +217,8 @@ func parseServiceMetadata(name, spec string, topologyMetadata TopologyMetadata) 
 	}, nil
 }
 
-func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata, parse bool) ([]ServiceMetadata, error) {
-	var metas []ServiceMetadata
+func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata, builder PartialTopologyBuilder, parse bool) ([]ServiceMetadata, error) {
+	metas := make([]ServiceMetadata, 0)
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if shouldIgnore(line) { // # comment, ignore empty lines
@@ -236,7 +236,12 @@ func ServiceMetadataFromLines(lines []string, topologyMetadata TopologyMetadata,
 		}
 		serviceName := strings.ReplaceAll(key, ServiceConfigSuffix, "")
 		if parse {
-			meta, err := parseServiceMetadata(serviceName, serviceSpec, topologyMetadata)
+			partialTopology, err := builder(metas)
+			print(fmt.Sprintf("%v", partialTopology))
+			if err != nil {
+				return nil, err
+			}
+			meta, err := parseServiceMetadata(serviceName, serviceSpec, topologyMetadata, partialTopology)
 			if err != nil {
 				return nil, err
 			}
